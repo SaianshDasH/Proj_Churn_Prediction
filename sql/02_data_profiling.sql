@@ -1,5 +1,5 @@
 -- ============================================================
--- Day 1: Data Profiling Queries
+-- Day 1: Data Profiling Queries (PostgreSQL)
 -- E-Commerce Customer Churn Prediction
 -- ============================================================
 -- Run these queries AFTER loading data to understand
@@ -22,9 +22,10 @@ SELECT 'engagement', COUNT(*) FROM engagement;
 SELECT 
     churn,
     COUNT(*) AS customer_count,
-    ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customers), 2) AS percentage
+    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage
 FROM customers
-GROUP BY churn;
+GROUP BY churn
+ORDER BY churn;
 
 -- =====================
 -- 3. NULL VALUE AUDIT
@@ -66,14 +67,16 @@ SELECT
 FROM engagement;
 
 -- =====================
--- 4. DESCRIPTIVE STATISTICS — Numeric Columns
+-- 4. DESCRIPTIVE STATISTICS (PostgreSQL has percentile_cont for median)
 -- =====================
 SELECT 
     'tenure' AS feature,
     MIN(tenure) AS min_val,
     MAX(tenure) AS max_val,
     ROUND(AVG(tenure), 2) AS mean_val,
-    COUNT(*) AS non_null_count
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY tenure) AS median_val,
+    ROUND(STDDEV(tenure), 2) AS std_dev,
+    COUNT(tenure) AS non_null_count
 FROM customers
 WHERE tenure IS NOT NULL
 
@@ -84,7 +87,9 @@ SELECT
     MIN(order_count),
     MAX(order_count),
     ROUND(AVG(order_count), 2),
-    COUNT(*)
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY order_count),
+    ROUND(STDDEV(order_count), 2),
+    COUNT(order_count)
 FROM orders
 WHERE order_count IS NOT NULL
 
@@ -95,7 +100,9 @@ SELECT
     MIN(cashback_amount),
     MAX(cashback_amount),
     ROUND(AVG(cashback_amount), 2),
-    COUNT(*)
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cashback_amount),
+    ROUND(STDDEV(cashback_amount)::NUMERIC, 2),
+    COUNT(cashback_amount)
 FROM orders
 WHERE cashback_amount IS NOT NULL
 
@@ -106,7 +113,9 @@ SELECT
     MIN(day_since_last_order),
     MAX(day_since_last_order),
     ROUND(AVG(day_since_last_order), 2),
-    COUNT(*)
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY day_since_last_order),
+    ROUND(STDDEV(day_since_last_order), 2),
+    COUNT(day_since_last_order)
 FROM orders
 WHERE day_since_last_order IS NOT NULL
 
@@ -117,7 +126,9 @@ SELECT
     MIN(hours_on_app),
     MAX(hours_on_app),
     ROUND(AVG(hours_on_app), 2),
-    COUNT(*)
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY hours_on_app),
+    ROUND(STDDEV(hours_on_app), 2),
+    COUNT(hours_on_app)
 FROM engagement
 WHERE hours_on_app IS NOT NULL
 
@@ -128,7 +139,9 @@ SELECT
     MIN(satisfaction_score),
     MAX(satisfaction_score),
     ROUND(AVG(satisfaction_score), 2),
-    COUNT(*)
+    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY satisfaction_score),
+    ROUND(STDDEV(satisfaction_score)::NUMERIC, 2),
+    COUNT(satisfaction_score)
 FROM engagement
 WHERE satisfaction_score IS NOT NULL;
 
@@ -192,7 +205,9 @@ ORDER BY churn_rate_pct DESC;
 SELECT 
     e.complain,
     c.churn,
-    COUNT(*) AS count
+    COUNT(*) AS count,
+    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(PARTITION BY e.complain), 2) 
+        AS pct_within_complain_group
 FROM customers c
 JOIN engagement e ON c.customer_id = e.customer_id
 GROUP BY e.complain, c.churn

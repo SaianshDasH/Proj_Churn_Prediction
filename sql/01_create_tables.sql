@@ -1,7 +1,7 @@
--- ============================================================
+
 -- Day 1: Database Schema Design
 -- E-Commerce Customer Churn Prediction
--- ============================================================
+
 -- This script creates a normalized relational schema for
 -- storing e-commerce customer behavioral data.
 -- 
@@ -9,16 +9,13 @@
 --   1. customers      → Demographics & churn label
 --   2. orders          → Purchase behavior metrics
 --   3. engagement      → App usage & satisfaction data
--- ============================================================
+
 
 -- Drop existing tables if re-running
 DROP TABLE IF EXISTS engagement;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS customers;
 
--- ===================
--- TABLE 1: customers
--- ===================
 -- Core customer demographics and the target variable (churn)
 CREATE TABLE IF NOT EXISTS customers (
     customer_id INTEGER PRIMARY KEY,
@@ -32,9 +29,8 @@ CREATE TABLE IF NOT EXISTS customers (
     churn INTEGER  -- Target: 1 = churned, 0 = retained
 );
 
--- ===================
--- TABLE 2: orders
--- ===================
+
+
 -- Purchase behavior and monetary metrics
 CREATE TABLE IF NOT EXISTS orders (
     customer_id INTEGER PRIMARY KEY,
@@ -46,9 +42,7 @@ CREATE TABLE IF NOT EXISTS orders (
     FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
 );
 
--- ===================
--- TABLE 3: engagement
--- ===================
+
 -- App usage, satisfaction, and complaint data
 CREATE TABLE IF NOT EXISTS engagement (
     customer_id INTEGER PRIMARY KEY,
@@ -61,5 +55,5 @@ CREATE TABLE IF NOT EXISTS engagement (
     FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
 );
 
--- Verify tables were created
+
 SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;

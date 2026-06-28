@@ -1,19 +1,20 @@
 """
 ============================================================
-Day 01: SQL Database Setup & Data Ingestion
+Day 01: PostgreSQL Database Setup & Data Ingestion
 E-Commerce Customer Churn Prediction
 ============================================================
 
 OBJECTIVE:
-    - Load raw e-commerce customer data from CSV
-    - Create a normalized SQLite database (3 tables)
+    - Create PostgreSQL database and normalized tables
+    - Load raw e-commerce customer data from CSV/Excel
     - Ingest data into the relational schema
     - Run data profiling queries to understand data quality
     - Document initial findings
 
 SKILLS DEMONSTRATED:
-    - SQL: CREATE TABLE, INSERT, JOINs, GROUP BY, Aggregations
-    - Python: sqlite3, pandas, data ingestion pipeline
+    - PostgreSQL: CREATE TABLE, SERIAL, CHECK constraints, Indexes
+    - SQL: JOINs, GROUP BY, Aggregations, Window Functions
+    - Python: psycopg2, pandas, data ingestion pipeline
     
 DATASET:
     Download from Kaggle and place in data/raw/ directory:
@@ -24,8 +25,9 @@ DATASET:
 ============================================================
 """
 
-import sqlite3
+import psycopg2
 import pandas as pd
+import numpy as np
 import os
 import sys
 import warnings
@@ -34,9 +36,9 @@ warnings.filterwarnings('ignore')
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.utils import (
-    get_db_connection, run_sql_file, run_sql_query,
+    get_db_connection, create_database, run_sql_file, run_sql_query,
     print_section_header, print_query_result, print_dataframe_info,
-    ensure_directories
+    ensure_directories, DB_CONFIG
 )
 
 
@@ -64,9 +66,8 @@ DATA_PATHS = [
 raw_df = None
 for path in DATA_PATHS:
     if os.path.exists(path):
-        print(f"[✓] Found dataset: {path}")
+        print(f"[OK] Found dataset: {path}")
         if path.endswith('.xlsx'):
-            # The Kaggle dataset has the data in the 'E Comm' sheet
             try:
                 raw_df = pd.read_excel(path, sheet_name='E Comm')
             except Exception:
@@ -88,7 +89,6 @@ if raw_df is None:
     # ========================================
     # Generate synthetic data for demo
     # ========================================
-    import numpy as np
     np.random.seed(42)
     
     n_customers = 5630
@@ -147,7 +147,6 @@ if raw_df is None:
     raw_df.loc[churn_mask, 'Complain'] = np.random.choice(
         [0, 1], size=churn_count, p=[0.4, 0.6]
     )
-    # Temporarily convert to float to avoid dtype conflict, then back
     raw_df['SatisfactionScore'] = raw_df['SatisfactionScore'].astype(float)
     raw_df.loc[churn_mask, 'SatisfactionScore'] = np.random.choice(
         [1, 2, 3, 4, 5], size=churn_count, p=[0.3, 0.25, 0.2, 0.15, 0.1]
@@ -194,58 +193,80 @@ print(raw_df.head().to_string())
 
 
 # ============================================================
-# STEP 3: Create SQLite Database & Tables
+# STEP 3: Create PostgreSQL Database & Tables
 # ============================================================
-print_section_header("STEP 3: Create Database & Tables")
+print_section_header("STEP 3: Create PostgreSQL Database & Tables")
 
-DB_PATH = "data/ecommerce_churn.db"
+# Create database if it doesn't exist
+create_database("ecommerce_churn")
 
-# Remove existing DB if re-running
-if os.path.exists(DB_PATH):
-    os.remove(DB_PATH)
-    print(f"[*] Removed existing database: {DB_PATH}")
-
-conn = get_db_connection(DB_PATH)
+# Connect to the project database
+conn = get_db_connection()
+print(f"[OK] Connected to PostgreSQL: {DB_CONFIG['database']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}")
 
 # Execute the schema creation SQL
 run_sql_file(conn, "sql/01_create_tables.sql")
 
 # Verify tables were created
-tables = run_sql_query(conn, "SELECT name FROM sqlite_master WHERE type='table'")
-print(f"\n[OK] Tables created: {', '.join(tables['name'].tolist())}")
+tables = run_sql_query(conn, """
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    ORDER BY table_name
+""")
+print(f"\n[OK] Tables created: {', '.join(tables['table_name'].tolist())}")
 
 
 # ============================================================
 # STEP 4: Ingest Data into Normalized Tables
 # ============================================================
-print_section_header("STEP 4: Data Ingestion")
+print_section_header("STEP 4: Data Ingestion into PostgreSQL")
+
+# Helper function to insert DataFrame into PostgreSQL table
+def insert_dataframe(conn, df, table_name, columns):
+    """Insert a DataFrame into a PostgreSQL table using executemany."""
+    subset = df[columns].copy()
+    
+    # Replace NaN with None for PostgreSQL
+    subset = subset.where(pd.notnull(subset), None)
+    
+    placeholders = ', '.join(['%s'] * len(columns))
+    col_names = ', '.join(columns)
+    insert_query = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
+    
+    cursor = conn.cursor()
+    
+    # Convert to list of tuples
+    records = [tuple(row) for row in subset.values]
+    
+    # Use executemany for batch insert
+    cursor.executemany(insert_query, records)
+    conn.commit()
+    cursor.close()
+    
+    print(f"[OK] Inserted {len(records)} rows into '{table_name}' table")
+
 
 # ---- Insert into customers table ----
 customers_cols = [
     'customer_id', 'gender', 'marital_status', 'city_tier', 'tenure',
     'preferred_login_device', 'preferred_payment_mode', 'preferred_order_cat', 'churn'
 ]
-customers_df = raw_df[customers_cols].copy()
-customers_df.to_sql('customers', conn, if_exists='replace', index=False)
-print(f"[OK] Inserted {len(customers_df)} rows into 'customers' table")
+insert_dataframe(conn, raw_df, 'customers', customers_cols)
 
 # ---- Insert into orders table ----
 orders_cols = [
     'customer_id', 'order_count', 'order_amount_hike_from_last_year',
     'coupon_used', 'day_since_last_order', 'cashback_amount'
 ]
-orders_df = raw_df[orders_cols].copy()
-orders_df.to_sql('orders', conn, if_exists='replace', index=False)
-print(f"[OK] Inserted {len(orders_df)} rows into 'orders' table")
+insert_dataframe(conn, raw_df, 'orders', orders_cols)
 
 # ---- Insert into engagement table ----
 engagement_cols = [
     'customer_id', 'hours_on_app', 'number_of_address', 'complain',
     'satisfaction_score', 'number_of_device_registered', 'warehouse_to_home'
 ]
-engagement_df = raw_df[engagement_cols].copy()
-engagement_df.to_sql('engagement', conn, if_exists='replace', index=False)
-print(f"[OK] Inserted {len(engagement_df)} rows into 'engagement' table")
+insert_dataframe(conn, raw_df, 'engagement', engagement_cols)
 
 
 # ============================================================
@@ -283,9 +304,10 @@ result = run_sql_query(conn, """
     SELECT 
         churn,
         COUNT(*) AS customer_count,
-        ROUND(COUNT(*) * 100.0 / (SELECT COUNT(*) FROM customers), 2) AS percentage
+        ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER(), 2) AS percentage
     FROM customers
     GROUP BY churn
+    ORDER BY churn
 """)
 print(result.to_string(index=False))
 
@@ -313,28 +335,33 @@ for table, cols in [
     if all(result[f"null_{c}"].values[0] == 0 for c in cols if f"null_{c}" in result.columns):
         print(f"    [OK] No null values!")
 
-# --- 6.3: Descriptive Statistics ---
-print("\n>> 6.3 -- Descriptive Statistics (Numeric Features)")
-result = run_sql_query(conn, """
-    SELECT 
-        'tenure' AS feature,
-        MIN(tenure) AS min_val, MAX(tenure) AS max_val,
-        ROUND(AVG(tenure), 2) AS mean_val, COUNT(tenure) AS non_null
-    FROM customers
-    UNION ALL
-    SELECT 'order_count', MIN(order_count), MAX(order_count),
-        ROUND(AVG(order_count), 2), COUNT(order_count) FROM orders
-    UNION ALL
-    SELECT 'cashback_amount', MIN(cashback_amount), MAX(cashback_amount),
-        ROUND(AVG(cashback_amount), 2), COUNT(cashback_amount) FROM orders
-    UNION ALL
-    SELECT 'day_since_last_order', MIN(day_since_last_order), MAX(day_since_last_order),
-        ROUND(AVG(day_since_last_order), 2), COUNT(day_since_last_order) FROM orders
-    UNION ALL
-    SELECT 'satisfaction_score', MIN(satisfaction_score), MAX(satisfaction_score),
-        ROUND(AVG(satisfaction_score), 2), COUNT(satisfaction_score) FROM engagement
-""")
-print(result.to_string(index=False))
+# --- 6.3: Descriptive Statistics (with PostgreSQL PERCENTILE_CONT) ---
+print("\n>> 6.3 -- Descriptive Statistics (with Median via PERCENTILE_CONT)")
+stats_queries = [
+    ("tenure", "customers"),
+    ("order_count", "orders"),
+    ("cashback_amount", "orders"),
+    ("day_since_last_order", "orders"),
+    ("satisfaction_score", "engagement"),
+]
+stats_rows = []
+for col, table in stats_queries:
+    result = run_sql_query(conn, f"""
+        SELECT 
+            '{col}' AS feature,
+            MIN({col}) AS min_val,
+            MAX({col}) AS max_val,
+            ROUND(AVG({col})::NUMERIC, 2) AS mean_val,
+            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {col}) AS median_val,
+            ROUND(STDDEV({col})::NUMERIC, 2) AS std_dev,
+            COUNT({col}) AS non_null
+        FROM {table}
+        WHERE {col} IS NOT NULL
+    """)
+    stats_rows.append(result)
+
+stats_df = pd.concat(stats_rows, ignore_index=True)
+print(stats_df.to_string(index=False))
 
 # --- 6.4: Churn Rate by Key Categories ---
 print("\n>> 6.4 -- Churn Rate by Category")
@@ -400,7 +427,7 @@ print(f"[OK] Saved joined dataset: data/processed/churn_data_clean.csv ({len(ful
 
 # Close connection
 conn.close()
-print("\n[OK] Database connection closed.")
+print("\n[OK] PostgreSQL connection closed.")
 
 
 # ============================================================
@@ -410,29 +437,28 @@ print_section_header("DAY 1 -- COMPLETE")
 print("""
 What we accomplished today:
 -----------------------------------------
-1. [DONE] Loaded raw e-commerce dataset (5,630 customers)
-2. [DONE] Designed normalized SQL schema (3 tables)
-3. [DONE] Ingested data into SQLite database
-4. [DONE] Validated data integrity (0 orphans)
+1. [DONE] Created PostgreSQL database 'ecommerce_churn'
+2. [DONE] Designed normalized schema (3 tables with constraints & indexes)
+3. [DONE] Ingested 5,630 customers via psycopg2 batch insert
+4. [DONE] Validated data integrity (0 orphans, FK checks)
 5. [DONE] Ran comprehensive data profiling:
      - Churn distribution (class imbalance check)
      - Null value audit across all tables
-     - Descriptive statistics for numeric features
+     - Descriptive stats with PERCENTILE_CONT (median)
      - Churn rate by 5 categorical dimensions
      - Complain vs Churn cross-tabulation
 6. [DONE] Exported processed data for Day 2
 
-Files created today:
+PostgreSQL Features Used:
 -----------------------------------------
-  sql/01_create_tables.sql     -> Schema design
-  sql/02_data_profiling.sql    -> Profiling queries
-  notebooks/Day01_SQL_Database_Setup.py  -> This script
-  src/utils.py                 -> Reusable utilities
-  data/ecommerce_churn.db      -> SQLite database
-  data/processed/churn_data_clean.csv   -> Clean dataset
+  SERIAL, VARCHAR, NUMERIC, CHECK constraints
+  CASCADE drops, Indexes, information_schema
+  PERCENTILE_CONT, STDDEV, Window Functions (OVER)
+  psycopg2 batch inserts (executemany)
 
 Tomorrow (Day 2):
 -----------------------------------------
-  -> Advanced SQL: RFM segmentation, cohort analysis,
-     window functions, and business KPI queries
+  -> Advanced SQL: RFM segmentation with CTEs,
+     cohort analysis with window functions,
+     and business KPI queries
 """)

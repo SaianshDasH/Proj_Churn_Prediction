@@ -1,76 +1,129 @@
 """
-utils.py — Shared Utility Functions
+utils.py -- Shared Utility Functions (PostgreSQL Version)
 E-Commerce Customer Churn Prediction Project
 
-Reusable helpers for database operations, display formatting,
-and common data science tasks used across all 10 days.
+Reusable helpers for PostgreSQL database operations, display
+formatting, and common data science tasks used across all 10 days.
 """
 
-import sqlite3
+import psycopg2
+from psycopg2 import sql
 import pandas as pd
 import os
+
+
+# ============================================================
+# DATABASE CONFIGURATION
+# ============================================================
+
+DB_CONFIG = {
+    "host": "localhost",
+    "port": 5432,
+    "database": "ecommerce_churn",
+    "user": "postgres",
+    "password": "postgres",   # <-- UPDATE with your password
+}
 
 
 # ============================================================
 # DATABASE UTILITIES
 # ============================================================
 
-def get_db_connection(db_path: str = "data/ecommerce_churn.db") -> sqlite3.Connection:
+def get_db_connection(db_config: dict = None) -> psycopg2.extensions.connection:
     """
-    Create and return a SQLite database connection.
+    Create and return a PostgreSQL database connection.
     
     Args:
-        db_path: Path to the SQLite database file.
+        db_config: Dict with host, port, database, user, password.
+                   Defaults to DB_CONFIG.
     
     Returns:
-        sqlite3.Connection object.
+        psycopg2 connection object.
     """
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row  # Enable column-name access
+    config = db_config or DB_CONFIG
+    conn = psycopg2.connect(**config)
+    conn.autocommit = True
     return conn
 
 
-def run_sql_file(conn: sqlite3.Connection, sql_file_path: str) -> None:
+def get_admin_connection(db_config: dict = None) -> psycopg2.extensions.connection:
+    """
+    Connect to the default 'postgres' database (for creating/dropping databases).
+    """
+    config = (db_config or DB_CONFIG).copy()
+    config["database"] = "postgres"
+    conn = psycopg2.connect(**config)
+    conn.autocommit = True
+    return conn
+
+
+def create_database(db_name: str = "ecommerce_churn", db_config: dict = None):
+    """
+    Create the project database if it doesn't exist.
+    
+    Args:
+        db_name: Name of the database to create.
+        db_config: Connection config dict.
+    """
+    conn = get_admin_connection(db_config)
+    cursor = conn.cursor()
+    
+    # Check if database exists
+    cursor.execute(
+        "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,)
+    )
+    exists = cursor.fetchone()
+    
+    if not exists:
+        cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
+        print(f"[OK] Created database: {db_name}")
+    else:
+        print(f"[OK] Database already exists: {db_name}")
+    
+    cursor.close()
+    conn.close()
+
+
+def run_sql_file(conn, sql_file_path: str) -> None:
     """
     Execute all SQL statements from a .sql file.
     
     Args:
-        conn: Active SQLite connection.
+        conn: Active PostgreSQL connection.
         sql_file_path: Path to the SQL file to execute.
     """
     with open(sql_file_path, 'r') as f:
         sql_script = f.read()
     
     cursor = conn.cursor()
-    cursor.executescript(sql_script)
+    cursor.execute(sql_script)
     conn.commit()
+    cursor.close()
     print(f"[OK] Executed: {sql_file_path}")
 
 
-def run_sql_query(conn: sqlite3.Connection, query: str, params: tuple = None) -> pd.DataFrame:
+def run_sql_query(conn, query: str, params: tuple = None) -> pd.DataFrame:
     """
     Execute a SQL query and return results as a DataFrame.
     
     Args:
-        conn: Active SQLite connection.
+        conn: Active PostgreSQL connection.
         query: SQL query string.
         params: Optional tuple of query parameters.
     
     Returns:
         pandas DataFrame with query results.
     """
-    if params:
-        return pd.read_sql_query(query, conn, params=params)
-    return pd.read_sql_query(query, conn)
+    return pd.read_sql_query(query, conn, params=params)
 
 
-def run_sql_file_queries(conn: sqlite3.Connection, sql_file_path: str) -> list:
+def run_sql_file_queries(conn, sql_file_path: str) -> list:
     """
     Execute each query from a SQL file individually and return results.
     Splits on semicolons and runs each statement.
     
     Args:
-        conn: Active SQLite connection.
+        conn: Active PostgreSQL connection.
         sql_file_path: Path to the SQL file.
     
     Returns:
@@ -84,7 +137,7 @@ def run_sql_file_queries(conn: sqlite3.Connection, sql_file_path: str) -> list:
     
     results = []
     for stmt in statements:
-        # Skip comments-only blocks and non-SELECT statements
+        # Skip comments-only blocks
         clean = '\n'.join(
             line for line in stmt.split('\n') 
             if not line.strip().startswith('--')
@@ -107,8 +160,10 @@ def run_sql_file_queries(conn: sqlite3.Connection, sql_file_path: str) -> list:
                 print(f"[!!] Query failed: {str(e)[:80]}")
         else:
             try:
-                conn.execute(stmt + ';')
+                cursor = conn.cursor()
+                cursor.execute(stmt + ';')
                 conn.commit()
+                cursor.close()
             except Exception as e:
                 print(f"[!!] Statement failed: {str(e)[:80]}")
     
@@ -137,8 +192,8 @@ def print_query_result(description: str, df: pd.DataFrame) -> None:
 
 def print_dataframe_info(df: pd.DataFrame, name: str = "DataFrame") -> None:
     """Print comprehensive info about a DataFrame."""
-    print_section_header(f"{name} — Summary")
-    print(f"Shape: {df.shape[0]} rows × {df.shape[1]} columns")
+    print_section_header(f"{name} -- Summary")
+    print(f"Shape: {df.shape[0]} rows x {df.shape[1]} columns")
     print(f"Memory Usage: {df.memory_usage(deep=True).sum() / 1024:.1f} KB")
     print(f"\nColumn Types:")
     print(df.dtypes.value_counts().to_string())
@@ -173,5 +228,4 @@ def ensure_directories() -> None:
 
 def get_project_root() -> str:
     """Get the project root directory path."""
-    # Navigate up from src/ to project root
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
