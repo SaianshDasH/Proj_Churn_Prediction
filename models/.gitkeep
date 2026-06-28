@@ -1,0 +1,3 @@
+# Saved Models
+# Trained model artifacts (.pkl, .h5, .joblib) are stored here.
+# These files are gitignored due to their size.
