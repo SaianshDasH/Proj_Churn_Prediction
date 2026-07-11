@@ -11,6 +11,13 @@ from psycopg2 import sql
 import pandas as pd
 import os
 
+# Try to load environment variables from a local .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 # ============================================================
 # DATABASE CONFIGURATION
@@ -21,7 +28,7 @@ DB_CONFIG = {
     "port": 5432,
     "database": "ecommerce_churn",
     "user": "postgres",
-    "password": "postgres",   # <-- UPDATE with your password
+    "password": "your_password_here",   # <-- Use .env file instead of updating here
 }
 
 
