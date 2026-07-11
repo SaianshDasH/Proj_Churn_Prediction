@@ -54,6 +54,3 @@ CREATE TABLE IF NOT EXISTS engagement (
     warehouse_to_home REAL,
     FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
 );
-
-
-SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;

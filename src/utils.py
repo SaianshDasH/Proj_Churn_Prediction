@@ -40,8 +40,22 @@ def get_db_connection(db_config: dict = None) -> psycopg2.extensions.connection:
     Returns:
         psycopg2 connection object.
     """
+    import os
     config = db_config or DB_CONFIG
-    conn = psycopg2.connect(**config)
+    
+    host = os.environ.get("DB_HOST", config.get("host", "localhost"))
+    port = int(os.environ.get("DB_PORT", config.get("port", 5432)))
+    database = os.environ.get("DB_NAME", config.get("database", "ecommerce_churn"))
+    user = os.environ.get("DB_USER", config.get("user", "postgres"))
+    password = os.environ.get("DB_PASSWORD", config.get("password", "postgres"))
+    
+    conn = psycopg2.connect(
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        password=password
+    )
     conn.autocommit = True
     return conn
 
@@ -50,9 +64,23 @@ def get_admin_connection(db_config: dict = None) -> psycopg2.extensions.connecti
     """
     Connect to the default 'postgres' database (for creating/dropping databases).
     """
+    import os
     config = (db_config or DB_CONFIG).copy()
     config["database"] = "postgres"
-    conn = psycopg2.connect(**config)
+    
+    host = os.environ.get("DB_HOST", config.get("host", "localhost"))
+    port = int(os.environ.get("DB_PORT", config.get("port", 5432)))
+    database = os.environ.get("DB_NAME", config.get("database", "postgres"))
+    user = os.environ.get("DB_USER", config.get("user", "postgres"))
+    password = os.environ.get("DB_PASSWORD", config.get("password", "postgres"))
+    
+    conn = psycopg2.connect(
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        password=password
+    )
     conn.autocommit = True
     return conn
 
@@ -75,6 +103,7 @@ def create_database(db_name: str = "ecommerce_churn", db_config: dict = None):
     exists = cursor.fetchone()
     
     if not exists:
+        from psycopg2 import sql
         cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name)))
         print(f"[OK] Created database: {db_name}")
     else:
@@ -100,6 +129,8 @@ def run_sql_file(conn, sql_file_path: str) -> None:
     conn.commit()
     cursor.close()
     print(f"[OK] Executed: {sql_file_path}")
+
+
 
 
 def run_sql_query(conn, query: str, params: tuple = None) -> pd.DataFrame:

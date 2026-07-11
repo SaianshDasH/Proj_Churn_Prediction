@@ -97,14 +97,14 @@ if raw_df is None:
         'CustomerID': range(1, n_customers + 1),
         'Churn': np.random.choice([0, 1], size=n_customers, p=[0.83, 0.17]),
         'Tenure': np.random.choice(
-            [np.nan] * 100 + list(range(0, 62)), size=n_customers
+            [np.nan] * 3 + list(range(0, 62)), size=n_customers
         ).astype(float),
         'PreferredLoginDevice': np.random.choice(
             ['Mobile Phone', 'Computer', 'Phone'], size=n_customers, p=[0.5, 0.3, 0.2]
         ),
         'CityTier': np.random.choice([1, 2, 3], size=n_customers, p=[0.5, 0.3, 0.2]),
         'WarehouseToHome': np.random.choice(
-            [np.nan] * 200 + list(range(5, 130)), size=n_customers
+            [np.nan] * 6 + list(range(5, 130)), size=n_customers
         ).astype(float),
         'PreferredPaymentMode': np.random.choice(
             ['Debit Card', 'UPI', 'Credit Card', 'Cash on Delivery', 'E wallet', 'CC'],
@@ -112,7 +112,7 @@ if raw_df is None:
         ),
         'Gender': np.random.choice(['Male', 'Female'], size=n_customers, p=[0.6, 0.4]),
         'HourSpendOnApp': np.random.choice(
-            [np.nan] * 100 + list(range(0, 6)), size=n_customers
+            [np.nan] * 1 + list(range(0, 6)) * 4, size=n_customers
         ).astype(float),
         'NumberOfDeviceRegistered': np.random.randint(1, 7, size=n_customers),
         'PreferedOrderCat': np.random.choice(
@@ -126,16 +126,16 @@ if raw_df is None:
         'NumberOfAddress': np.random.randint(1, 23, size=n_customers),
         'Complain': np.random.choice([0, 1], size=n_customers, p=[0.72, 0.28]),
         'OrderAmountHikeFromlable': np.random.choice(
-            [np.nan] * 100 + list(range(11, 27)), size=n_customers
+            [np.nan] * 1 + list(range(11, 27)) * 2, size=n_customers
         ).astype(float),
         'CouponUsed': np.random.choice(
-            [np.nan] * 200 + list(range(0, 17)), size=n_customers
+            [np.nan] * 1 + list(range(0, 17)) * 2, size=n_customers
         ).astype(float),
         'OrderCount': np.random.choice(
-            [np.nan] * 200 + list(range(1, 17)), size=n_customers
+            [np.nan] * 1 + list(range(1, 17)) * 2, size=n_customers
         ).astype(float),
         'DaySinceLastOrder': np.random.choice(
-            [np.nan] * 300 + list(range(0, 47)), size=n_customers
+            [np.nan] * 2 + list(range(0, 47)), size=n_customers
         ).astype(float),
         'CashbackAmount': np.round(np.random.uniform(0, 325, size=n_customers), 2),
     })
@@ -224,13 +224,18 @@ print_section_header("STEP 4: Data Ingestion into PostgreSQL")
 
 # Helper function to insert DataFrame into PostgreSQL table
 def insert_dataframe(conn, df, table_name, columns):
-    """Insert a DataFrame into a PostgreSQL table using executemany."""
+    """Insert a DataFrame into a PostgreSQL or SQLite table using executemany."""
     subset = df[columns].copy()
     
-    # Replace NaN with None for PostgreSQL
+    # Replace NaN with None for database compatibility
     subset = subset.where(pd.notnull(subset), None)
     
-    placeholders = ', '.join(['%s'] * len(columns))
+    import sqlite3
+    if isinstance(conn, sqlite3.Connection):
+        placeholders = ', '.join(['?'] * len(columns))
+    else:
+        placeholders = ', '.join(['%s'] * len(columns))
+        
     col_names = ', '.join(columns)
     insert_query = f"INSERT INTO {table_name} ({col_names}) VALUES ({placeholders})"
     
@@ -241,7 +246,8 @@ def insert_dataframe(conn, df, table_name, columns):
     
     # Use executemany for batch insert
     cursor.executemany(insert_query, records)
-    conn.commit()
+    if not isinstance(conn, sqlite3.Connection):
+        conn.commit()
     cursor.close()
     
     print(f"[OK] Inserted {len(records)} rows into '{table_name}' table")

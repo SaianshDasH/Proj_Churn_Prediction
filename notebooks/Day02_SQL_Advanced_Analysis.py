@@ -54,7 +54,7 @@ else:
         'customer_id': range(1, n + 1),
         'churn': np.random.choice([0, 1], size=n, p=[0.83, 0.17]),
         'tenure': np.random.choice(
-            [None] * 100 + list(range(0, 62)), size=n),
+            [None] * 3 + list(range(0, 62)), size=n),
         'gender': np.random.choice(['Male', 'Female'], size=n, p=[0.6, 0.4]),
         'city_tier': np.random.choice([1, 2, 3], size=n, p=[0.5, 0.3, 0.2]),
         'marital_status': np.random.choice(
@@ -68,29 +68,32 @@ else:
             ['Laptop & Accessory', 'Mobile Phone', 'Fashion', 'Grocery', 'Others'],
             size=n, p=[0.3, 0.25, 0.2, 0.15, 0.1]),
         'order_count': np.random.choice(
-            [None] * 200 + list(range(1, 17)), size=n),
+            [None] * 1 + list(range(1, 17)) * 2, size=n),
         'order_amount_hike_from_last_year': np.random.choice(
-            [None] * 100 + list(range(11, 27)), size=n),
+            [None] * 1 + list(range(11, 27)) * 2, size=n),
         'coupon_used': np.random.choice(
-            [None] * 200 + list(range(0, 17)), size=n),
+            [None] * 1 + list(range(0, 17)) * 2, size=n),
         'day_since_last_order': np.random.choice(
-            [None] * 300 + list(range(0, 47)), size=n),
+            [None] * 2 + list(range(0, 47)), size=n),
         'cashback_amount': np.round(np.random.uniform(0, 325, size=n), 2),
         'hours_on_app': np.random.choice(
-            [None] * 100 + list(range(0, 6)), size=n),
+            [None] * 1 + list(range(0, 6)) * 4, size=n),
         'number_of_address': np.random.randint(1, 23, size=n),
         'complain': np.random.choice([0, 1], size=n, p=[0.72, 0.28]),
         'satisfaction_score': np.random.randint(1, 6, size=n),
         'number_of_device_registered': np.random.randint(1, 7, size=n),
         'warehouse_to_home': np.random.choice(
-            [None] * 200 + list(range(5, 130)), size=n),
+            [None] * 6 + list(range(5, 130)), size=n),
     })
     # Inject churn signal
     churn_mask = df['churn'] == 1
+    df['satisfaction_score'] = df['satisfaction_score'].astype(float)
     df.loc[churn_mask, 'complain'] = np.random.choice(
-        [0, 1], size=churn_mask.sum(), p=[0.4, 0.6])
+        [0, 1], size=churn_mask.sum(), p=[0.4, 0.6]
+    ).astype(float)
     df.loc[churn_mask, 'satisfaction_score'] = np.random.choice(
-        [1, 2, 3, 4, 5], size=churn_mask.sum(), p=[0.3, 0.25, 0.2, 0.15, 0.1])
+        [1, 2, 3, 4, 5], size=churn_mask.sum(), p=[0.3, 0.25, 0.2, 0.15, 0.1]
+    ).astype(float)
     df.to_csv(CSV_PATH, index=False)
     print(f"[OK] Generated synthetic data and saved to {CSV_PATH}")
 
